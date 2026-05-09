@@ -309,9 +309,14 @@
                         let zip = await queryZip(line);
                         let source = '中華郵政資料';
                         if (!zip) {
-                            btn.innerHTML = `<i class="fas fa-circle-notch animate-spin text-2xl"></i> AI 補查中...`;
-                            zip = await queryZipWithAI(line, apiKey);
-                            source = 'AI 補查';
+                            if (!apiKey) {
+                                zip = "查無結果";
+                                source = '建議輸入 API Key 以啟用 AI 補查';
+                            } else {
+                                btn.innerHTML = `<i class="fas fa-circle-notch animate-spin text-2xl"></i> AI 補查中...`;
+                                zip = await queryZipWithAI(line, apiKey);
+                                source = 'AI 補查';
+                            }
                         }
                         const is6 = /^[0-9]{6}$/.test(zip);
                         const row = document.createElement('tr');
@@ -334,13 +339,35 @@
                     btn.innerHTML = `<i class="fas fa-bolt text-2xl"></i> 開始 AI 處理`;
                     return;
                 } else if (currentTab === 'name') {
-                    userPrompt = `中翻英。姓在前、全大寫、名在後。回傳：[{"original":"姓名","result":"漢語","extra":"威妥瑪"}]\n資料：\n${lines.join('\n')}`;
+                    userPrompt = `請將下列中文姓名全部轉換為護照英文拼音。規則：姓氏全大寫置前，名字每個字首字母大寫置後，姓名之間空一格。漢語拼音（護照規格）與威妥瑪拼音（舊式）都要提供。
+範例：林宥嶙 → 漢語:LIN You-Lin，威妥瑪:LIN Yu-Lin
+回傳 JSON Array，每筆格式：{"original":"中文姓名","result":"漢語拼音（護照格式）","extra":"威妥瑪拼音"}
+資料：
+${lines.join('\n')}`;
                 } else if (currentTab === 'date') {
-                    userPrompt = `民國生日算西元與足歲。格式：[{"original":"日期","result":"YYYY/MM/DD","extra":"XX歲 / 生肖"}]\n資料：\n${lines.join('\n')}`;
+                    userPrompt = `請將下列民國生日日期轉換為西元日期、計算足歲與十二生肖。
+輸入格式可能為：800520、80/05/20、民80.05.20、80年5月20日等各種寫法，請自動識別。
+民國年轉西元：民國年+1911=西元年。足歲以今日（${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}）計算，未過生日則減1。
+回傳 JSON Array，每筆格式：{"original":"原始輸入","result":"YYYY/MM/DD","extra":"XX歲 / 生肖"}
+資料：
+${lines.join('\n')}`;
                 } else if (currentTab === 'miguo') {
-                    userPrompt = `西元轉民國EMMDD。民國年E必須三碼。回傳：[{"original":"西元","result":"EMMDD","extra":"說明"}]\n資料：\n${lines.join('\n')}`;
+                    userPrompt = `請將下列西元日期轉換為台灣民國年格式（EMMDD，共7碼）。
+民國年=西元年-1911，年份必須補齊3碼（如115年→115，不可寫成15或0115）。月日各2碼補零。
+輸入格式可能為：2026/05/10、2026-05-10、20260510等，請自動識別。
+範例：2026/05/10 → 1150510
+回傳 JSON Array，每筆格式：{"original":"西元輸入","result":"EMMDD七碼","extra":"民國年月日說明"}
+資料：
+${lines.join('\n')}`;
                 } else {
-                    userPrompt = `清洗資料：統一半形、手機格式化(09XXXXXXXX)、提取Email或關鍵字。回傳：[{"original":"原文","result":"結果","extra":"動作"}]\n資料：\n${lines.join('\n')}`;
+                    userPrompt = `請清洗下列資料，執行以下動作：
+1. 全形轉半形（數字、英文、標點）
+2. 手機號碼統一格式化為 09XXXXXXXX（10碼）
+3. Email 提取並統一小寫
+4. 移除多餘空白與特殊符號
+回傳 JSON Array，每筆格式：{"original":"原始文字","result":"清洗後結果","extra":"執行了哪些動作"}
+資料：
+${lines.join('\n')}`;
                 }
 
                 const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -352,7 +379,7 @@
                         'anthropic-dangerous-direct-browser-access': 'true'
                     },
                     body: JSON.stringify({
-                        model: "claude-sonnet-4-20250514",
+                        model: "claude-haiku-4-5",
                         max_tokens: 8000,
                         system: systemPrompt,
                         messages: [{ role: "user", content: userPrompt + "\n\n【重要】請一次回傳所有筆資料的結果，不可省略任何一筆。只回傳純 JSON Array，不要任何說明文字、前言或 markdown 符號。" }]
@@ -388,7 +415,9 @@
                 showToast("✅ AI 處理完成！");
             } catch (error) {
                 console.error(error);
-                showToast("❌ 處理發生錯誤，請重試");
+                const msg = error.message || String(error);
+                showToast("❌ 錯誤：" + msg.slice(0, 40));
+                tableBody.innerHTML = `<tr><td colspan="3" class="p-6 text-red-500 text-center font-bold">❌ ${msg}</td></tr>`;
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i class="fas fa-bolt text-2xl"></i> 開始 AI 處理`;
