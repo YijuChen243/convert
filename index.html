@@ -222,7 +222,26 @@
             clearAll();
         }
 
+        function normalizeAddress(address) {
+            // 台/臺 通用替換
+            let addr = address.replace(/台/g, '臺');
+            // 若地址以鄉鎮市區開頭（沒有縣市），自動補「臺東縣」
+            const townPrefixes = [
+                '臺東市','綠島鄉','蘭嶼鄉','延平鄉','卑南鄉',
+                '鹿野鄉','關山鎮','海端鄉','池上鄉','東河鄉',
+                '成功鎮','長濱鄉','太麻里鄉','金峰鄉','大武鄉','達仁鄉'
+            ];
+            for (const town of townPrefixes) {
+                if (addr.startsWith(town)) {
+                    addr = '臺東縣' + addr;
+                    break;
+                }
+            }
+            return addr;
+        }
+
         async function queryZip(address) {
+            address = normalizeAddress(address);
             try {
                 const url = `https://zip5.5432.tw/zip5json.py?adrs=${encodeURIComponent(address)}`;
                 const res = await fetch(url);
@@ -306,27 +325,30 @@
                     tableBody.innerHTML = '';
                     let doneCount = 0;
                     for (const line of lines) {
-                        let zip = await queryZip(line);
+                        let zip = await queryZip(line); // normalizeAddress 已在 queryZip 內處理
                         let source = '中華郵政資料';
                         if (!zip) {
-                            if (!apiKey) {
-                                zip = "查無結果";
-                                source = '建議輸入 API Key 以啟用 AI 補查';
-                            } else {
-                                btn.innerHTML = `<i class="fas fa-circle-notch animate-spin text-2xl"></i> AI 補查中...`;
-                                zip = await queryZipWithAI(line, apiKey);
-                                source = 'AI 補查';
-                            }
+                            zip = "查無結果";
+                            source = '__MANUAL__';
                         }
                         const is6 = /^[0-9]{6}$/.test(zip);
+                        const isManual = source === '__MANUAL__';
+                        const postUrl = `https://nsda.post.gov.tw/Frontend/StandardAddressTransition/?address=${encodeURIComponent(line)}`;
                         const row = document.createElement('tr');
                         row.className = "hover:bg-slate-50 transition border-b border-slate-50";
                         row.innerHTML = `
                             <td class="p-6 text-slate-800 text-base font-medium">${line}</td>
                             <td class="p-6 text-center">
-                                <span class="${is6 ? 'bg-emerald-600' : 'bg-red-400'} text-white px-5 py-2.5 rounded-xl font-mono font-black shadow-md inline-block text-lg tracking-wider">${zip}</span>
+                                ${is6
+                                    ? `<span class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-mono font-black shadow-md inline-block text-lg tracking-wider">${zip}</span>`
+                                    : `<a href="${postUrl}" target="_blank" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-bold shadow-md text-sm transition">
+                                        <i class="fas fa-external-link-alt"></i> 點此至郵局官網查詢
+                                       </a>`
+                                }
                             </td>
-                            <td class="p-6 text-slate-500 text-sm font-medium italic">${is6 ? '✅ ' + source : '⚠️ 查無結果'}</td>
+                            <td class="p-6 text-slate-500 text-sm font-medium italic">
+                                ${is6 ? '✅ 中華郵政資料' : '⚠️ 自動查詢失敗，請點右側連結至官網補查'}
+                            </td>
                         `;
                         tableBody.appendChild(row);
                         doneCount++;
