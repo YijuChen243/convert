@@ -95,6 +95,9 @@
             <button onclick="switchTab('clean')" id="tabClean" class="flex-1 min-w-[120px] py-6 font-bold text-center text-slate-400 transition-all">
                 <i class="fas fa-broom mb-2 text-xl block"></i><span class="text-sm sm:text-base">文字清洗</span>
             </button>
+            <button onclick="switchTab('phone')" id="tabPhone" class="flex-1 min-w-[120px] py-6 font-bold text-center text-slate-400 transition-all">
+                <i class="fas fa-mobile-alt mb-2 text-xl block"></i><span class="text-sm sm:text-base">手機格式化</span>
+            </button>
         </div>
     </div>
 
@@ -187,11 +190,12 @@
         document.getElementById('currentDateDisplay').innerText = `${today.getFullYear()} / ${today.getMonth()+1} / ${today.getDate()}`;
 
         const tabConfig = {
-            postal: { icon: 'fa-map-marker-alt', title: '地址批次處理', hint: '貼上地址（如： 台東市正氣路440號），AI 將自動辨識 3+3 郵遞區號。', theme: 'theme-postal', btnIcon: 'fa-mail-bulk' },
+            postal: { icon: 'fa-map-marker-alt', title: '地址批次處理', hint: '貼上地址（如：台東市正氣路440號），自動辨識 3+3 郵遞區號。✅ 不需要 API Key', theme: 'theme-postal', btnIcon: 'fa-mail-bulk' },
             name: { icon: 'fa-signature', title: '姓名英譯處理', hint: '貼上中文姓名，AI 將自動轉換護照規格（漢語、威妥瑪）拼音。', theme: 'theme-name', btnIcon: 'fa-id-badge' },
             date: { icon: 'fa-calendar-check', title: '民國生日換算', hint: '貼上民國年日期（如：800520），計算西元、足歲與十二生肖。', theme: 'theme-date', btnIcon: 'fa-birthday-cake' },
             miguo: { icon: 'fa-calendar-alt', title: '西元轉民國 (EMMDD)', hint: '將西元日期轉換為 7 碼民國格式。年份補齊三碼（如：2026 轉 115）。', theme: 'theme-miguo', btnIcon: 'fa-exchange-alt' },
-            clean: { icon: 'fa-broom', title: '資料清洗與萃取', hint: '格式化手機號碼、半形化文字、提取 Email 或關鍵字。', theme: 'theme-clean', btnIcon: 'fa-wand-sparkles' }
+            clean: { icon: 'fa-broom', title: '資料清洗與萃取', hint: '適合各類混雜資料清洗：全形轉半形、提取 Email。若整欄都是手機號碼，請改用「手機格式化」Tab。', theme: 'theme-clean', btnIcon: 'fa-wand-sparkles' },
+            phone: { icon: 'fa-mobile-alt', title: '手機號碼格式化', hint: '貼上手機號碼，自動統一轉換為 09XX-XXXXXX（如：0920-123456）格式，支援 +886 國際碼。✅ 不需要 API Key', theme: 'theme-clean', btnIcon: 'fa-mobile-alt' }
         };
 
         function switchTab(tab) {
@@ -284,6 +288,55 @@
             const rawText = document.getElementById('mainInput').value.trim();
             if (!rawText) { showToast("請先貼上資料！"); return; }
             // 郵遞區號 tab 不一定需要 key（有 AI 補查才需要）
+            // 手機格式化：純前端，不需要 API Key
+            if (currentTab === 'phone') {
+                const lines = rawText.split('\n').filter(l => l.trim() !== '');
+                const tableBody = document.getElementById('tableBody');
+                const tableHead = document.getElementById('tableHead');
+                const placeholder = document.getElementById('placeholderText');
+                const wrapper = document.getElementById('tableWrapper');
+                const btn = document.getElementById('btnProcess');
+                btn.disabled = true;
+                placeholder.classList.add('hidden');
+                wrapper.classList.remove('hidden');
+                const th = 'p-5 text-slate-500 text-xs font-black uppercase tracking-widest border-b-2 border-slate-100';
+                tableHead.innerHTML = '<tr>'
+                    + '<th class="' + th + '">原始號碼</th>'
+                    + '<th class="' + th + '">格式化結果</th>'
+                    + '<th class="' + th + '">狀態</th></tr>';
+                tableBody.innerHTML = '';
+                let validCount = 0;
+                for (const line of lines) {
+                    let clean = line.trim().replace(/[^\d+]/g, '');
+                    if (clean.startsWith('+886')) clean = '0' + clean.slice(4);
+                    else if (clean.startsWith('886')) clean = '0' + clean.slice(3);
+                    let result, status, ok;
+                    if (clean.length === 10 && clean.startsWith('09')) {
+                        result = clean.substring(0, 4) + '-' + clean.substring(4);
+                        status = '✅ 轉換成功';
+                        ok = true;
+                        validCount++;
+                    } else {
+                        result = line.trim();
+                        status = '⚠️ 不符台灣手機格式';
+                        ok = false;
+                    }
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-slate-50 transition border-b border-slate-50';
+                    const spanClass = ok ? 'bg-emerald-600' : 'bg-amber-400';
+                    row.innerHTML = '<td class="p-6 text-slate-800 text-base font-medium font-mono">' + line.trim() + '</td>'
+                        + '<td class="p-6 text-center"><span class="' + spanClass + ' text-white px-5 py-2.5 rounded-xl font-mono font-black shadow-md inline-block text-lg tracking-wider">' + result + '</span></td>'
+                        + '<td class="p-6 text-slate-500 text-sm font-medium italic">' + status + '</td>';
+                    tableBody.appendChild(row);
+                }
+                document.getElementById('actionButtons').classList.remove('hidden');
+                showToast('✅ 完成！成功轉換 ' + validCount + '/' + lines.length + ' 筆');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-bolt text-2xl"></i> 開始 AI 處理';
+                return;
+            }
+
+            // postal 和 phone 不需要 Key；其他 tab 需要
             if (currentTab !== 'postal' && !apiKey) {
                 showToast("⚠️ 請先在右上角輸入您的 Claude API Key！");
                 document.getElementById('apiKeyInput').focus();
@@ -333,23 +386,16 @@
                         }
                         const is6 = /^[0-9]{6}$/.test(zip);
                         const isManual = source === '__MANUAL__';
-                        const postUrl = `https://nsda.post.gov.tw/Frontend/StandardAddressTransition/?address=${encodeURIComponent(line)}`;
+                        const postUrl = 'https://nsda.post.gov.tw/Frontend/StandardAddressTransition/?address=' + encodeURIComponent(line);
                         const row = document.createElement('tr');
                         row.className = "hover:bg-slate-50 transition border-b border-slate-50";
-                        row.innerHTML = `
-                            <td class="p-6 text-slate-800 text-base font-medium">${line}</td>
-                            <td class="p-6 text-center">
-                                ${is6
-                                    ? `<span class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-mono font-black shadow-md inline-block text-lg tracking-wider">${zip}</span>`
-                                    : `<a href="${postUrl}" target="_blank" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-bold shadow-md text-sm transition">
-                                        <i class="fas fa-external-link-alt"></i> 點此至郵局官網查詢
-                                       </a>`
-                                }
-                            </td>
-                            <td class="p-6 text-slate-500 text-sm font-medium italic">
-                                ${is6 ? '✅ 中華郵政資料' : '⚠️ 自動查詢失敗，請點右側連結至官網補查'}
-                            </td>
-                        `;
+                        const zipCell = is6
+                            ? '<span class="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-mono font-black shadow-md inline-block text-lg tracking-wider">' + zip + '</span>'
+                            : '<a href="' + postUrl + '" target="_blank" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-bold shadow-md text-sm transition"><i class="fas fa-external-link-alt"></i> 點此至郵局官網查詢</a>';
+                        const statusCell = is6 ? '✅ 中華郵政資料' : '⚠️ 自動查詢失敗，請點右側連結至官網補查';
+                        row.innerHTML = '<td class="p-6 text-slate-800 text-base font-medium">' + line + '</td>'
+                            + '<td class="p-6 text-center">' + zipCell + '</td>'
+                            + '<td class="p-6 text-slate-500 text-sm font-medium italic">' + statusCell + '</td>';
                         tableBody.appendChild(row);
                         doneCount++;
                         btn.innerHTML = `<i class="fas fa-circle-notch animate-spin text-2xl"></i> 已完成 ${doneCount}/${lines.length}`;
@@ -410,7 +456,7 @@ ${lines.join('\n')}`;
 
                 const data = await response.json();
                 if (data.error) throw new Error(data.error.message);
-                const rawText = data.content[0].text.trim().replace(/^```json|^```|```$/gm, '').trim();
+                const rawText = data.content[0].text.trim().replace(/^(```json|```)/gm, '').replace(/```$/gm, '').trim();
                 const aiResults = JSON.parse(rawText);
                 
                 tableBody.innerHTML = '';
